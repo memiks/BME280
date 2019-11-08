@@ -1,9 +1,13 @@
 #
 # Example. Using I2C at P9, P10
 #
-from machine import I2C
-from bme280 import *
-i2c=I2C()
-bme280 = BME280(i2c=i2c)
-bme280.values
+import sys
+from machine import I2C, Pin, SPI
+import BME280Float
 
+hspi = SPI(1, baudrate=80000000, polarity=0, phase=0)
+
+cspin = Pin(15,Pin.OUT)
+
+bme280 = BME280Float(spi=hspi,cspin=cspin)
+bme280.values

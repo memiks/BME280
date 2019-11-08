@@ -39,10 +39,6 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 #
-# Based on the documentation as provided in the Bosch Data Sheet and
-# the sample implementation provided therein.
-# Document BST-BME280-DS002-15
-#
 
 import time
 from ustruct import unpack, unpack_from
@@ -63,12 +59,14 @@ BME280_REGISTER_STATUS = 0xF3
 BME280_REGISTER_CONTROL = 0xF4
 
 
-class BME280:
+class BME280Float:
 
     def __init__(self,
                  mode=BME280_OSAMPLE_8,
                  address=BME280_I2CADDR,
                  i2c=None,
+                 spi=None,
+                 cspin=None,
                  **kwargs):
         # Check that mode is valid.
         if mode not in [BME280_OSAMPLE_1, BME280_OSAMPLE_2, BME280_OSAMPLE_4,
@@ -79,14 +77,15 @@ class BME280:
                 'BME280_ULTRAHIGHRES'.format(mode))
         self._mode = mode
         self.address = address
-        if i2c is None:
-            raise ValueError('An I2C object is required.')
         self.i2c = i2c
+        self.spi = spi
+        self.cspin = cspin
         self.__sealevel = 101325
 
         # load calibration data
-        dig_88_a1 = self.i2c.readfrom_mem(self.address, 0x88, 26)
-        dig_e1_e7 = self.i2c.readfrom_mem(self.address, 0xE1, 7)
+        dig_88_a1 = self.readfrom_mem(self.address, 0x88, 26)
+        dig_e1_e7 = self.readfrom_mem(self.address, 0xE1, 7)
+
         self.dig_T1, self.dig_T2, self.dig_T3, self.dig_P1, \
             self.dig_P2, self.dig_P3, self.dig_P4, self.dig_P5, \
             self.dig_P6, self.dig_P7, self.dig_P8, self.dig_P9, \
@@ -98,7 +97,7 @@ class BME280:
         self.dig_H4 = (self.dig_H4 * 16) + (self.dig_H5 & 0xF)
         self.dig_H5 //= 16
 
-        self.i2c.writeto_mem(self.address, BME280_REGISTER_CONTROL,
+        self.writeto_mem(self.address, BME280_REGISTER_CONTROL,
                              bytearray([0x3F]))
         self.t_fine = 0
 
@@ -118,18 +117,18 @@ class BME280:
         """
 
         self._l1_barray[0] = self._mode
-        self.i2c.writeto_mem(self.address, BME280_REGISTER_CONTROL_HUM,
+        self.writeto_mem(self.address, BME280_REGISTER_CONTROL_HUM,
                              self._l1_barray)
         self._l1_barray[0] = self._mode << 5 | self._mode << 2 | 1
-        self.i2c.writeto_mem(self.address, BME280_REGISTER_CONTROL,
+        self.writeto_mem(self.address, BME280_REGISTER_CONTROL,
                              self._l1_barray)
 
         # Wait for conversion to complete
-        while self.i2c.readfrom_mem(self.address, BME280_REGISTER_STATUS, 1)[0] & 0x08:
-            time.sleep_ms(10)
+        while self.readfrom_mem(self.address, BME280_REGISTER_STATUS, 1)[0] & 0x08:
+            time.sleep_ms(5)
 
         # burst readout from 0xF7 to 0xFE, recommended by datasheet
-        self.i2c.readfrom_mem_into(self.address, 0xF7, self._l8_barray)
+        self.readfrom_mem_into(self.address, 0xF7, self._l8_barray)
         readout = self._l8_barray
         # pressure(0xF7): ((msb << 16) | (lsb << 8) | xlsb) >> 4
         raw_press = ((readout[0] << 16) | (readout[1] << 8) | readout[2]) >> 4
@@ -157,39 +156,35 @@ class BME280:
         self.read_raw_data(self._l3_resultarray)
         raw_temp, raw_press, raw_hum = self._l3_resultarray
         # temperature
-        var1 = (((raw_temp // 8) - (self.dig_T1 * 2)) * self.dig_T2) // 2048
-        var2 = (raw_temp // 16) - self.dig_T1
-        var2 = (((var2 * var2) // 4096) * self.dig_T3) // 16384
-        self.t_fine = var1 + var2
-        temp = (self.t_fine * 5 + 128) // 256
+        var1 = (raw_temp/16384.0 - self.dig_T1/1024.0) * self.dig_T2
+        var2 = raw_temp/131072.0 - self.dig_T1/8192.0
+        var2 = var2 * var2 * self.dig_T3
+        self.t_fine = int(var1 + var2)
+        temp = (var1 + var2) / 5120.0
+        temp = max(-40, min(85, temp))
 
         # pressure
-        var1 = self.t_fine - 128000
-        var2 = var1 * var1 * self.dig_P6
-        var2 = var2 + ((var1 * self.dig_P5) << 17)
-        var2 = var2 + (self.dig_P4 << 35)
-        var1 = (((var1 * var1 * self.dig_P3) >> 8) +
-                ((var1 * self.dig_P2) << 12))
-        var1 = (((1 << 47) + var1) * self.dig_P1) >> 33
-        if var1 == 0:
-            pressure = 0
+        var1 = (self.t_fine/2.0) - 64000.0
+        var2 = var1 * var1 * self.dig_P6 / 32768.0 + var1 * self.dig_P5 * 2.0
+        var2 = (var2 / 4.0) + (self.dig_P4 * 65536.0)
+        var1 = (self.dig_P3 * var1 * var1 / 524288.0 + self.dig_P2 * var1) / 524288.0
+        var1 = (1.0 + var1 / 32768.0) * self.dig_P1
+        if (var1 == 0.0):
+            pressure = 30000  # avoid exception caused by division by zero
         else:
-            p = ((((1048576 - raw_press) << 31) - var2) * 3125) // var1
-            var1 = (self.dig_P9 * (p >> 13) * (p >> 13)) >> 25
-            var2 = (self.dig_P8 * p) >> 19
-            pressure = ((p + var1 + var2) >> 8) + (self.dig_P7 << 4)
+            p = ((1048576.0 - raw_press) - (var2 / 4096.0)) * 6250.0 / var1
+            var1 = self.dig_P9 * p * p / 2147483648.0
+            var2 = p * self.dig_P8 / 32768.0
+            pressure = p + (var1 + var2 + self.dig_P7) / 16.0
+            pressure = max(30000, min(110000, pressure))
 
         # humidity
-        h = self.t_fine - 76800
-        h = (((((raw_hum << 14) - (self.dig_H4 << 20) -
-                (self.dig_H5 * h)) + 16384) >> 15) *
-             (((((((h * self.dig_H6) >> 10) *
-                (((h * self.dig_H3) >> 11) + 32768)) >> 10) + 2097152) *
-              self.dig_H2 + 8192) >> 14))
-        h = h - (((((h >> 15) * (h >> 15)) >> 7) * self.dig_H1) >> 4)
-        h = 0 if h < 0 else h
-        h = 419430400 if h > 419430400 else h
-        humidity = h >> 12
+        h = (self.t_fine - 76800.0)
+        h = ((raw_hum - (self.dig_H4 * 64.0 + self.dig_H5 / 16384.0 * h)) *
+             (self.dig_H2 / 65536.0 * (1.0 + self.dig_H6 / 67108864.0 * h *
+                                       (1.0 + self.dig_H3 / 67108864.0 * h))))
+        humidity = h * (1.0 - self.dig_H1 * h / 524288.0)
+        # humidity = max(0, min(100, humidity))
 
         if result:
             result[0] = temp
@@ -197,7 +192,7 @@ class BME280:
             result[2] = humidity
             return result
 
-        return array("i", (temp, pressure, humidity))
+        return array("f", (temp, pressure, humidity))
 
     @property
     def sealevel(self):
@@ -205,7 +200,7 @@ class BME280:
 
     @sealevel.setter
     def sealevel(self, value):
-        if 300 < value < 1200:  # just ensure some reasonable value
+        if 30000 < value < 120000:  # just ensure some reasonable value
             self.__sealevel = value
 
     @property
@@ -215,7 +210,7 @@ class BME280:
         '''
         from math import pow
         try:
-            p = 44330 * (1.0 - pow((self.read_compensated_data()[1] / 256) /
+            p = 44330 * (1.0 - pow(self.read_compensated_data()[1] /
                                    self.__sealevel, 0.1903))
         except:
             p = 0.0
@@ -229,10 +224,8 @@ class BME280:
         """
         from math import log
         t, p, h = self.read_compensated_data()
-        t /= 100
-        h /= 1024
         h = (log(h, 10) - 2) / 0.4343 + (17.62 * t) / (243.12 + t)
-        return (243.12 * h / (17.62 - h)) * 100
+        return 243.12 * h / (17.62 - h)
 
     @property
     def values(self):
@@ -240,8 +233,45 @@ class BME280:
 
         t, p, h = self.read_compensated_data()
 
-        p = p / 256
+        return ("{:.2f}C".format(t), "{:.2f}hPa".format(p/100),
+                "{:.2f}%".format(h))
 
-        h = h / 1024
-        return ("{}C".format(t / 100), "{:.02f}hPa".format(p/100),
-                "{:.02f}%".format(h))
+    def readfrom_mem(self, addr, memaddr, nbytes):
+        if self.i2c is not None:
+            return self.i2c.readfrom_mem(addr, memaddr, nbytes)
+        
+        if self.spi is not None:
+            self.cspin.on()
+            memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
+            self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
+            result = bytearray(nbytes)
+            self.spi.readinto(result)              #pylint: disable=no-member
+            #print("$%02X => %s" % (register, [hex(i) for i in result]))
+            self.cspin.off()
+            return result
+
+        raise NotImplementedError()
+
+    def writeto_mem(self, addr, memaddr, buf):
+        if self.i2c is not None:
+            self.i2c.writeto_mem(addr, memaddr, buf)
+        elif self.spi is not None:
+            self.cspin.on()
+            memaddr &= 0x7F  # Write, bit 7 low.
+            self.spi.write(bytes([memaddr, buf & 0xFF])) #pylint: disable=no-member
+            self.cspin.off()
+        else:
+            raise NotImplementedError()
+
+    def readfrom_mem_into(self, addr, memaddr, buf):
+        if self.i2c is not None:
+            self.i2c.readfrom_mem_into(addr, memaddr, buf)
+        elif self.spi is not None:
+            self.cspin.on()
+            memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
+            self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
+            self.spi.readinto(buf)              #pylint: disable=no-member
+            #print("$%02X => %s" % (register, [hex(i) for i in result]))
+            self.cspin.off()
+
+        raise NotImplementedError()
