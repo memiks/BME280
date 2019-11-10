@@ -3,11 +3,14 @@
 #
 import sys
 from machine import I2C, Pin, SPI
-import BME280Float
+from BME280Float import BME280Float
 
-hspi = SPI(1, baudrate=80000000, polarity=0, phase=0)
+hspi = SPI(1, polarity=0, phase=0)
 
 cspin = Pin(15,Pin.OUT)
+cspin.on()
 
 bme280 = BME280Float(spi=hspi,cspin=cspin)
-bme280.values
+values = bme280.read_compensated_data()
+
+
