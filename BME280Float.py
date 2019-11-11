@@ -239,7 +239,7 @@ class BME280Float:
     def readfrom_mem(self, addr, memaddr, nbytes):
         if self.i2c is not None:
             return self.i2c.readfrom_mem(addr, memaddr, nbytes)
-        
+
         if self.spi is not None:
             self.cspin.off()
             memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
@@ -258,7 +258,8 @@ class BME280Float:
         elif self.spi is not None:
             self.cspin.off()
             memaddr &= 0x7F  # Write, bit 7 low.
-            self.spi.write(bytearray([memaddr])) #pylint: disable=no-member
+            value = buf[0] & 0xFF
+            self.spi.write(bytearray([memaddr, value])) #pylint: disable=no-member
             self.cspin.on()
         else:
             raise NotImplementedError()

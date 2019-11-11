@@ -12,5 +12,9 @@ cspin.on()
 
 bme280 = BME280Float(spi=hspi,cspin=cspin)
 values = bme280.read_compensated_data()
+print('compensated values=')
+print(values)
 
-
+bme280.read_raw_data(values)
+print('RAW values')
+print(values)
