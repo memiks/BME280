@@ -243,9 +243,9 @@ class BME280Float:
         if self.spi is not None:
             self.cspin.off()
             memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
-            self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
-            result = bytearray(nbytes)
-            self.spi.readinto(result)              #pylint: disable=no-member
+            result = self.spi.read(nbytes,memaddr)  #pylint: disable=no-member
+            #result = bytearray(nbytes)
+            #self.spi.readinto(result)              #pylint: disable=no-member
             #print("$%02X => %s" % (register, [hex(i) for i in result]))
             self.cspin.on()
             return result
@@ -270,8 +270,8 @@ class BME280Float:
         elif self.spi is not None:
             self.cspin.off()
             memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
-            self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
-            self.spi.readinto(buf)              #pylint: disable=no-member
+            #self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
+            self.spi.readinto(buf,memaddr)              #pylint: disable=no-member
             #print("$%02X => %s" % (register, [hex(i) for i in result]))
             self.cspin.on()
         else:
