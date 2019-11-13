@@ -242,11 +242,10 @@ class BME280Float:
 
         if self.spi is not None:
             self.cspin.off()
-            # memaddr = (memaddr | 0x80) & 0xFF  # Read single, bit 7 high.
-            result = self.spi.read(nbytes,memaddr)  #pylint: disable=no-member
-            #result = bytearray(nbytes)
-            #self.spi.readinto(result)              #pylint: disable=no-member
-            #print("$%02X => %s" % (register, [hex(i) for i in result]))
+            memaddr = memaddr | 0x80  # Read single, bit 7 high.
+            result = self.spi.read(nbytes, memaddr)  #pylint: disable=no-member
+
+            print("$%02X => %s" % (memaddr, [hex(i) for i in result]))
             self.cspin.on()
             return result
 
@@ -257,8 +256,7 @@ class BME280Float:
             self.i2c.writeto_mem(addr, memaddr, buf)
         elif self.spi is not None:
             self.cspin.off()
-            memaddr &= 0x7F  # Write, bit 7 low.
-            #value = buf[0] & 0xFF
+            memaddr = memaddr & 0x80  # Write, bit 7 low.
             self.spi.write(bytearray([memaddr])) #pylint: disable=no-member
             self.spi.write(buf) #pylint: disable=no-member
             self.cspin.on()
@@ -270,7 +268,7 @@ class BME280Float:
             self.i2c.readfrom_mem_into(addr, memaddr, buf)
         elif self.spi is not None:
             self.cspin.off()
-            # memaddr = (memaddr | 0x80) # & 0xFF  # Read single, bit 7 high.
+            memaddr = memaddr | 0x80 # Read single, bit 7 high.
             self.spi.write(bytearray([memaddr]))  #pylint: disable=no-member
             self.spi.readinto(buf)              #pylint: disable=no-member
             #print("$%02X => %s" % (register, [hex(i) for i in result]))
