@@ -59,7 +59,7 @@ BME280_REGISTER_STATUS = 0xF3
 BME280_REGISTER_CONTROL = 0xF4
 
 
-class BME280Float:
+class BME280:
 
     def __init__(self,
                  mode=BME280_OSAMPLE_8,
