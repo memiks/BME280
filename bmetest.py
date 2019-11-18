@@ -1,13 +1,16 @@
-#
-# Example. Using I2C at P9, P10
-#
 import sys
 import time
 from machine import Pin, SPI
 from BME280impl import BME280_SPI
 
-hspi = SPI(1, polarity=1, phase=1)
+#
+# Example. Using SPI at P14, P13, P12
+#
+hspi = SPI(-1, polarity=1, phase=1, firstbit=SPI.MSB, sck=Pin(14), mosi=Pin(13), miso=Pin(12))
 
+#
+# Chip Select at P15
+#
 cspin = Pin(15,Pin.OUT)
 cspin.on()
 
