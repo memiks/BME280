@@ -12,7 +12,7 @@ hspi = SPI(-1, polarity=1, phase=1, firstbit=SPI.MSB, sck=Pin(14), mosi=Pin(13),
 # Chip Select at P15
 #
 cspin = Pin(15,Pin.OUT)
-cspin.on()
+cspin(1) # Put chip select to High in order to put BM280 in sleep mode before usage.
 
 bme280 = BME280_SPI(hspi, cspin)
 
